@@ -1,11 +1,11 @@
 package org.fossasia.susi.ai.helper
 
 import android.text.format.DateFormat
-
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.TimeZone
+import timber.log.Timber
 
 /**
  * <h1>Helper class to get current date and time. Also to parse date and time from server.</h1>
@@ -25,7 +25,7 @@ object DateTimeHelper {
     val currentTime: String
         get() {
             val delegate = "hh:mm aaa"
-            return DateFormat.format(delegate, Calendar.getInstance().time) as String
+            return DateFormat.format(delegate, Calendar.getInstance().time).toString()
         }
 
     /**
@@ -39,6 +39,11 @@ object DateTimeHelper {
             return sdf.format(Date())
         }
 
+    val today: Date
+        get() {
+            return Calendar.getInstance().time
+        }
+
     /**
      * Method to format date from server
 
@@ -46,14 +51,15 @@ object DateTimeHelper {
      * *
      * @return Date
      */
-    private fun formatDate(date: String): Date? {
+    private fun formatDate(date: String): Date {
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
         sdf.timeZone = TimeZone.getTimeZone("UTC")
         var dateIn: Date?
-        try {
-            dateIn = sdf.parse(date)
+        dateIn = try {
+            sdf.parse(date)
         } catch (e: Exception) {
-            dateIn = null
+            Timber.e(e)
+            today
         }
 
         return dateIn
@@ -84,6 +90,25 @@ object DateTimeHelper {
         val sdf = SimpleDateFormat("hh:mm aaa")
         val tz = TimeZone.getDefault()
         sdf.timeZone = tz
-        return sdf.format(formatDate(date))
+        return if (date.isEmpty()) {
+            throw IllegalArgumentException("date argument is empty")
+        } else {
+            sdf.format(formatDate(date))
+        }
+    }
+
+    fun formatDate(timestamp: String, months: Array<String>): String {
+        return if (timestamp.length > 10 && months.size == 12) {
+            var date: String? = ""
+            timestamp.trim()
+            val month = timestamp.substring(5, 7).toInt()
+            date = timestamp.substring(8, 10) + " " +
+                    months[month - 1].toString() +
+                    ", " + timestamp.substring(0, 4)
+
+            date
+        } else {
+            throw IllegalArgumentException("Timestamp or Months format not correct")
+        }
     }
 }

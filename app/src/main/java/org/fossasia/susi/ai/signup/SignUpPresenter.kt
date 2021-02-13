@@ -1,16 +1,23 @@
 package org.fossasia.susi.ai.signup
 
+import android.graphics.Color
+import java.net.UnknownHostException
 import org.fossasia.susi.ai.R
+import org.fossasia.susi.ai.data.ForgotPasswordModel
 import org.fossasia.susi.ai.data.SignUpModel
 import org.fossasia.susi.ai.data.UtilModel
+import org.fossasia.susi.ai.data.contract.IForgotPasswordModel
 import org.fossasia.susi.ai.data.contract.ISignUpModel
+import org.fossasia.susi.ai.data.db.contract.IDatabaseRepository
 import org.fossasia.susi.ai.helper.Constant
 import org.fossasia.susi.ai.helper.CredentialHelper
+import org.fossasia.susi.ai.helper.NetworkUtils
+import org.fossasia.susi.ai.rest.responses.susi.ForgotPasswordResponse
 import org.fossasia.susi.ai.rest.responses.susi.SignUpResponse
 import org.fossasia.susi.ai.signup.contract.ISignUpPresenter
 import org.fossasia.susi.ai.signup.contract.ISignUpView
+import org.fossasia.susi.ai.skills.settings.contract.ISettingsView
 import retrofit2.Response
-import java.net.UnknownHostException
 
 /**
  * Presenter for Login
@@ -19,18 +26,12 @@ import java.net.UnknownHostException
  * Created by mayanktripathi on 05/07/17.
  */
 
-class SignUpPresenter(signUpActivity: SignUpActivity) : ISignUpPresenter, ISignUpModel.OnSignUpFinishedListener {
+class SignUpPresenter(private val forgotPasswordModel: ForgotPasswordModel, private val signUpModel: SignUpModel, private val utilModel: UtilModel, private val databaseRepository: IDatabaseRepository, private val signUpView: ISignUpView) : ISignUpPresenter, ISignUpModel.OnSignUpFinishedListener, IForgotPasswordModel.OnFinishListener {
 
-    var signUpView: ISignUpView? = null
-    var signUpModel: SignUpModel = SignUpModel()
-    var utilModel: UtilModel = UtilModel(signUpActivity)
+    private var settingView: ISettingsView? = null
     lateinit var email: String
 
-    override fun onAttach(signUpView: ISignUpView) {
-        this.signUpView = signUpView
-    }
-
-    override fun signUp(email: String, password: String, conpass: String, isSusiServerSelected: Boolean, url: String) {
+    override fun signUp(email: String, password: String, conpass: String, isSusiServerSelected: Boolean, url: String, isTermsAndConditionSelected: Boolean) {
 
         if (email.isEmpty()) {
             signUpView?.invalidCredentials(true, Constant.EMAIL)
@@ -42,6 +43,10 @@ class SignUpPresenter(signUpActivity: SignUpActivity) : ISignUpPresenter, ISignU
         }
         if (conpass.isEmpty()) {
             signUpView?.invalidCredentials(true, Constant.CONFIRM_PASSWORD)
+            return
+        }
+        if (isTermsAndConditionSelected == false) {
+            signUpView?.invalidCredentials(true, Constant.ACCEPT_TERMS_AND_CONDITIONS)
             return
         }
         if (!CredentialHelper.isEmailValid(email)) {
@@ -75,15 +80,19 @@ class SignUpPresenter(signUpActivity: SignUpActivity) : ISignUpPresenter, ISignU
 
         this.email = email
         signUpView?.showProgress(true)
-        signUpModel.signUp(email.trim({ it <= ' ' }).toLowerCase(), password, this)
-
+        signUpModel.signUp(email.trim { it <= ' ' }.toLowerCase(), password, this)
     }
 
     override fun onError(throwable: Throwable) {
         signUpView?.showProgress(false)
 
         if (throwable is UnknownHostException) {
-            signUpView?.onSignUpError(utilModel.getString(R.string.unknown_host_exception), throwable.message.toString())
+            if (NetworkUtils.isNetworkConnected()) {
+                signUpView?.onSignUpError(utilModel.getString(R.string.unknown_host_exception), throwable.message.toString())
+            } else {
+                signUpView?.onSignUpError(utilModel.getString(R.string.error_internet_connectivity),
+                        utilModel.getString(R.string.no_internet_connection))
+            }
         } else {
             signUpView?.onSignUpError(utilModel.getString(R.string.error_internet_connectivity),
                     utilModel.getString(R.string.no_internet_connection))
@@ -95,7 +104,6 @@ class SignUpPresenter(signUpActivity: SignUpActivity) : ISignUpPresenter, ISignU
         if (response.isSuccessful && response.body() != null) {
             signUpView?.alertSuccess()
             signUpView?.clearField()
-
         } else {
             if (response.code() == 422) {
                 signUpView?.alertFailure()
@@ -115,7 +123,62 @@ class SignUpPresenter(signUpActivity: SignUpActivity) : ISignUpPresenter, ISignU
         signUpModel.cancelSignUp()
     }
 
-    override fun onDetach() {
-        signUpView = null
+    override fun loginLogout() {
+        utilModel.clearToken()
+        utilModel.clearPrefs()
+        utilModel.saveAnonymity(false)
+        databaseRepository.deleteAllMessages()
+        settingView?.startLoginActivity()
+    }
+    override fun requestPassword(email: String, url: String, isPersonalServerChecked: Boolean) {
+        if (email.isEmpty()) {
+            signUpView?.invalidCredentials(true, Constant.EMAIL)
+            return
+        }
+
+        if (!CredentialHelper.isEmailValid(email)) {
+            signUpView?.invalidCredentials(false, Constant.EMAIL)
+            return
+        }
+
+        if (isPersonalServerChecked) {
+            if (url.isEmpty()) {
+                signUpView?.invalidCredentials(true, Constant.INPUT_URL)
+                return
+            }
+            if (CredentialHelper.isURLValid(url)) {
+                val validUrl = CredentialHelper.getValidURL(url)
+                if (validUrl != null) {
+                    utilModel.setServer(false)
+                    utilModel.setCustomURL(validUrl)
+                } else {
+                    signUpView?.invalidCredentials(false, Constant.INPUT_URL)
+                    return
+                }
+            } else {
+                signUpView?.invalidCredentials(false, Constant.INPUT_URL)
+                return
+            }
+        } else {
+            utilModel.setServer(true)
+        }
+        this.email = email
+        signUpView?.showForgotPasswordProgress(true)
+        forgotPasswordModel.requestPassword(email.trim { it <= ' ' }, this)
+    }
+
+    override fun onForgotPasswordModelSuccess(response: Response<ForgotPasswordResponse>) {
+        signUpView?.showForgotPasswordProgress(false)
+        if (response.isSuccessful && response.body() != null) {
+            signUpView?.resetPasswordSuccess()
+        } else if (response.code() == 422) {
+            signUpView?.resetPasswordFailure(utilModel.getString(R.string.email_invalid_title), utilModel.getString(R.string.email_invalid), utilModel.getString(R.string.retry), Color.RED)
+        } else {
+            signUpView?.resetPasswordFailure("${response.code()} " + utilModel.getString(R.string.error), response.message(), utilModel.getString(R.string.ok), Color.BLUE)
+        }
+    }
+
+    override fun cancelSignup() {
+        forgotPasswordModel.cancelSignup()
     }
 }

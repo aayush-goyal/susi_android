@@ -3,13 +3,11 @@ package org.fossasia.susi.ai.helper
 import android.content.Context
 import android.support.design.widget.TextInputLayout
 import android.text.TextUtils
-import android.util.Log
 import android.util.Patterns
-
-import org.fossasia.susi.ai.R
-
 import java.net.URL
 import java.util.regex.Pattern
+import org.fossasia.susi.ai.R
+import timber.log.Timber
 
 /**
  * <h1>Helper class to verify credentials of user during login and sign up.</h1>
@@ -18,9 +16,9 @@ import java.util.regex.Pattern
  */
 object CredentialHelper {
 
-    private val TAG = "CredentialHelper"
-
-    private val PASSWORD_PATTERN = Pattern.compile("^.{6,64}$")
+    private val PASSWORD_PATTERN = Pattern.compile("^((?=.*\\d)(?=.*[A-Z])(?=.*[@#\$%])(?=.*\\W).{8,64})$")
+    private val VALID_EMAIL_ADDRESS_REGEX = Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,6}$", Pattern.CASE_INSENSITIVE)
+    private val VALID_URL_REGEX = Pattern.compile("^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
 
     /**
      * Is email valid boolean.
@@ -30,9 +28,9 @@ object CredentialHelper {
      * @return the boolean
      */
     fun isEmailValid(mail: String): Boolean {
-        Log.d(TAG, "isEmailValid: " + mail)
+        Timber.d("isEmailValid: %s", mail)
         val email = mail.trim { it <= ' ' }
-        return !TextUtils.isEmpty(email) && Patterns.EMAIL_ADDRESS.matcher(email).matches()
+        return !TextUtils.isEmpty(email) && VALID_EMAIL_ADDRESS_REGEX.matcher(email).matches()
     }
 
     /**
@@ -54,7 +52,7 @@ object CredentialHelper {
     fun clearFields(vararg layouts: TextInputLayout) {
         for (inputLayout in layouts) {
             if (inputLayout.editText != null) {
-                inputLayout.editText!!.text = null
+                inputLayout.editText?.text = null
             }
             inputLayout.error = null
         }
@@ -63,44 +61,44 @@ object CredentialHelper {
     /**
      * Is url valid boolean.
 
-     * @param url     the url
+     * @param url the url
      * *
      * @return the boolean
      */
     fun isURLValid(url: String): Boolean {
-        return Patterns.WEB_URL.matcher(url).matches()
+        return VALID_URL_REGEX.matcher(url).matches()
     }
 
     fun isURLValid(inputLayout: TextInputLayout, context: Context): Boolean {
-        if(Patterns.WEB_URL.matcher(inputLayout.editText?.text.toString()).matches()) {
+        return if (Patterns.WEB_URL.matcher(inputLayout.editText?.text.toString()).matches()) {
             inputLayout.error = null
-            return true
+            true
         } else {
             inputLayout.error = context.getString(R.string.invalid_url)
-            return false
+            false
         }
     }
+
     /**
      * Gets valid url.
 
-     * @param url     the url
+     * @param url the url
      * *
      * @return the valid url
      */
     fun getValidURL(url: String): String? {
-        try {
-            if (url.trim { it <= ' ' }.substring(0, 7) == "http://" || url.trim { it <= ' ' }.substring(0, 8) == "https://") {
+        return try {
+            return if (url.trim { it <= ' ' }.substring(0, 7) == "http://" || url.trim { it <= ' ' }.substring(0, 8) == "https://") {
                 val susiURL = URL(url.trim { it <= ' ' })
-                return susiURL.protocol + "://" + susiURL.host
+                susiURL.protocol + "://" + susiURL.host
             } else {
                 val susiURL = URL("http://" + url.trim { it <= ' ' })
-                return susiURL.protocol + "://" + susiURL.host
+                susiURL.protocol + "://" + susiURL.host
             }
         } catch (e: Exception) {
-            e.printStackTrace()
-            return null
+            Timber.e(e)
+            null
         }
-
     }
 
     /**
@@ -108,17 +106,17 @@ object CredentialHelper {
 
      * @param inputLayout the input layout
      * *
-     * @param context     the context
+     * @param context the context
      * *
      * @return the boolean
      */
     fun checkIfEmpty(inputLayout: TextInputLayout, context: Context): Boolean {
-        if (TextUtils.isEmpty(inputLayout.editText!!.text.toString())) {
+        return if (TextUtils.isEmpty(inputLayout.editText?.text.toString())) {
             inputLayout.error = context.getString(R.string.field_cannot_be_empty)
-            return true
+            true
         } else {
             inputLayout.error = null
-            return false
+            false
         }
     }
 }
